@@ -41,8 +41,10 @@ class RepoSyncCommand(dnf.cli.Command):
 
     @staticmethod
     def set_argparser(parser):
+        parser.add_argument('-n', '--newest-only', default=False, action='store_true',
+                            help=_('download only newest packages per-repo'))
         parser.add_argument('-p', '--download-path', default='./',
-                            help=_('where to store downloaded repositories '), )
+                            help=_('where to store downloaded repositories '))
 
     def configure(self):
         demands = self.cli.demands
@@ -64,6 +66,8 @@ class RepoSyncCommand(dnf.cli.Command):
 
     def run(self):
         base = self.base
+        query = base.sack.query().available()
         base.conf.keepcache = True
-        pkgs = base.sack.query().available()
-        base.download_packages(pkgs, self.base.output.progress)
+        if self.opts.newest_only:
+            query = query.latest()
+        base.download_packages(query, self.base.output.progress)
