@@ -21,12 +21,10 @@
 from __future__ import absolute_import
 from __future__ import unicode_literals
 
+from dnfpluginscore import _, logger
 import dnf
 import dnf.cli
-import dnfpluginscore
 import os
-
-_ = dnfpluginscore._
 
 
 def _pkgdir(intermediate, target):
@@ -41,6 +39,8 @@ class RepoSyncCommand(dnf.cli.Command):
 
     @staticmethod
     def set_argparser(parser):
+        parser.add_argument('--delete', default=False, action='store_true',
+                            help=_('delete local packages no longer present in repository'))
         parser.add_argument('-n', '--newest-only', default=False, action='store_true',
                             help=_('download only newest packages per-repo'))
         parser.add_argument('-p', '--download-path', default='./',
@@ -64,10 +64,29 @@ class RepoSyncCommand(dnf.cli.Command):
         for repo in repos.iter_enabled():
             repo.pkgdir = _pkgdir(self.opts.download_path, repo.id)
 
+    def delete_old_local_packages(self, packages_to_download):
+        download_map = dict()
+        for pkg in packages_to_download:
+            download_map[(pkg.repo.id, os.path.basename(pkg.location))] = 1
+        # delete any *.rpm file, that is not going to be downloaded from repository
+        for repo in self.base.repos.iter_enabled():
+            if os.path.exists(repo.pkgdir):
+                for filename in os.listdir(repo.pkgdir):
+                    path = os.path.join(repo.pkgdir, filename)
+                    if filename.endswith('.rpm') and os.path.isfile(path):
+                        if not (repo.id, filename) in download_map:
+                            try:
+                                os.unlink(path)
+                                logger.info(_("[DELETED] %s"), path)
+                            except OSError:
+                                logger.error(_("failed to delete file %s"), path)
+
     def run(self):
         base = self.base
         query = base.sack.query().available()
         base.conf.keepcache = True
         if self.opts.newest_only:
             query = query.latest()
+        if self.opts.delete:
+            self.delete_old_local_packages(query)
         base.download_packages(query, self.base.output.progress)
