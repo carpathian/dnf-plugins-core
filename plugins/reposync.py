@@ -66,8 +66,12 @@ class RepoSyncCommand(dnf.cli.Command):
                 except KeyError:
                     raise dnf.cli.CliError("Unknown repo: '%s'." % repoid)
                 repo.enable()
+
+        self._repo_base_path = dict()
         for repo in repos.iter_enabled():
-            repo.pkgdir = _pkgdir(self.opts.download_path, repo.id)
+            path = _pkgdir(self.opts.download_path, repo.id)
+            self._repo_base_path[repo.id] = path
+            repo.pkgdir = os.path.join(path, 'Packages')
 
     def delete_old_local_packages(self, packages_to_download):
         download_map = dict()
@@ -96,7 +100,7 @@ class RepoSyncCommand(dnf.cli.Command):
                     except IOError:
                         logger.error(_("Could not make repository directory: %s"), repo.pkgdir)
                         sys.exit(1)
-                dest = os.path.join(repo.pkgdir, 'comps.xml')
+                dest = os.path.join(self._repo_base_path[repo.id], 'comps.xml')
                 dnf.yum.misc.decompress(comps_fn, dest=dest)
                 logger.info(_("comps.xml for repository %s saved"), repo.id)
 
