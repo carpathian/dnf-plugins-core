@@ -24,7 +24,10 @@ from __future__ import unicode_literals
 from dnfpluginscore import _, logger
 import dnf
 import dnf.cli
+import dnf.i18n
+import dnf.yum.misc
 import os
+import sys
 
 
 def _pkgdir(intermediate, target):
@@ -41,6 +44,8 @@ class RepoSyncCommand(dnf.cli.Command):
     def set_argparser(parser):
         parser.add_argument('--delete', default=False, action='store_true',
                             help=_('delete local packages no longer present in repository'))
+        parser.add_argument('-m', '--downloadcomps', default=False, action='store_true',
+                            help=_('also download comps.xml'))
         parser.add_argument('-n', '--newest-only', default=False, action='store_true',
                             help=_('download only newest packages per-repo'))
         parser.add_argument('-p', '--download-path', default='./',
@@ -81,6 +86,20 @@ class RepoSyncCommand(dnf.cli.Command):
                             except OSError:
                                 logger.error(_("failed to delete file %s"), path)
 
+    def getcomps(self):
+        for repo in self.base.repos.iter_enabled():
+            comps_fn = repo.metadata._comps_fn
+            if comps_fn:
+                if not os.path.exists(repo.pkgdir):
+                    try:
+                        os.makedirs(repo.pkgdir)
+                    except IOError:
+                        logger.error(_("Could not make repository directory: %s"), repo.pkgdir)
+                        sys.exit(1)
+                dest = os.path.join(repo.pkgdir, 'comps.xml')
+                dnf.yum.misc.decompress(comps_fn, dest=dest)
+                logger.info(_("comps.xml for repository %s saved"), repo.id)
+
     def run(self):
         base = self.base
         query = base.sack.query().available()
@@ -89,4 +108,6 @@ class RepoSyncCommand(dnf.cli.Command):
             query = query.latest()
         if self.opts.delete:
             self.delete_old_local_packages(query)
+        if self.opts.downloadcomps:
+            self.getcomps()
         base.download_packages(query, self.base.output.progress)
