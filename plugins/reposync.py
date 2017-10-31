@@ -22,6 +22,7 @@ from __future__ import absolute_import
 from __future__ import unicode_literals
 
 from dnfpluginscore import _, logger
+from dnf.cli.option_parser import OptionParser
 import dnf
 import dnf.cli
 import dnf.i18n
@@ -42,6 +43,9 @@ class RepoSyncCommand(dnf.cli.Command):
 
     @staticmethod
     def set_argparser(parser):
+        parser.add_argument('-a', '--arch', dest='arches', default=[],
+                            action=OptionParser._SplitCallback, metavar='[arch]',
+                            help=_('download only packages for this ARCH'))
         parser.add_argument('--delete', default=False, action='store_true',
                             help=_('delete local packages no longer present in repository'))
         parser.add_argument('-m', '--downloadcomps', default=False, action='store_true',
@@ -50,6 +54,8 @@ class RepoSyncCommand(dnf.cli.Command):
                             help=_('download only newest packages per-repo'))
         parser.add_argument('-p', '--download-path', default='./',
                             help=_('where to store downloaded repositories '))
+        parser.add_argument('--source', default=False, action='store_true',
+                            help=_('operate on source packages'))
 
     def configure(self):
         demands = self.cli.demands
@@ -66,6 +72,9 @@ class RepoSyncCommand(dnf.cli.Command):
                 except KeyError:
                     raise dnf.cli.CliError("Unknown repo: '%s'." % repoid)
                 repo.enable()
+
+        if self.opts.source:
+            repos.enable_source_repos()
 
         self._repo_base_path = dict()
         for repo in repos.iter_enabled():
@@ -106,12 +115,20 @@ class RepoSyncCommand(dnf.cli.Command):
 
     def run(self):
         base = self.base
-        query = base.sack.query().available()
         base.conf.keepcache = True
+
+        query = base.sack.query().available()
         if self.opts.newest_only:
             query = query.latest()
+        if self.opts.source:
+            query = query.filter(arch='src')
+        elif self.opts.arches:
+            query = query.filter(arch=self.opts.arches)
+
         if self.opts.delete:
             self.delete_old_local_packages(query)
+
         if self.opts.downloadcomps:
             self.getcomps()
+
         base.download_packages(query, self.base.output.progress)
